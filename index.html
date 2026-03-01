@@ -181,6 +181,12 @@
     </div>
   </div>
 
+  <!-- Forecast banner -->
+  <div id="forecast-banner" style="display:none;margin:0 20px 12px;border-radius:12px;padding:12px 14px;font-size:12px;line-height:1.6"></div>
+
+  <!-- Category alerts -->
+  <div id="cat-alerts" style="margin:0 20px 4px"></div>
+
   <div class="section-title">Jour</div>
   <div class="days-scroll" id="days-scroll"></div>
 
@@ -348,6 +354,9 @@
 
   const CAT_COLORS = { nourriture:'#ff9a3c', bars:'#c084fc', transport:'#38bdf8', shopping:'#fb7185', activites:'#34d399', logement:'#facc15' };
   const CAT_ICONS  = { nourriture:'🍔', bars:'🍺', transport:'🚇', shopping:'🛍️', activites:'🎯', logement:'🏠' };
+
+  // Category alert thresholds (€)
+  const CAT_THRESHOLDS = { nourriture:300, bars:200, transport:100, shopping:250, activites:200, logement:800 };
   const DAY_NAMES  = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
   const MONTH_NAMES= ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc'];
 
@@ -422,6 +431,53 @@
     remEl.className = 'stat-value' + (remaining < 0 ? ' red' : remaining < 300 ? ' yellow' : ' green');
     document.getElementById('total-remaining-usd').textContent = (Math.max(0,remaining)*RATE).toFixed(0) + '$';
     document.getElementById('daily-avg').textContent = avg > 0 ? avg.toFixed(0) + '€' : '—';
+
+    // FORECAST BANNER
+    const banner = document.getElementById('forecast-banner');
+    if (avg > 0 && remaining > 0) {
+      const daysLeft = remaining / avg;
+      const tripDaysLeft = TRIP_DAYS - days + 1;
+      const isOk = daysLeft >= tripDaysLeft;
+      const endDate = new Date(TRIP_START);
+      endDate.setDate(endDate.getDate() + Math.round(daysLeft) - 1);
+      const endLabel = endDate.toLocaleDateString('fr-FR', {day:'numeric', month:'short'});
+      if (isOk) {
+        banner.style.display = 'block';
+        banner.style.background = '#0d1f16';
+        banner.style.border = '1px solid #1a3a2a';
+        banner.style.color = '#34d399';
+        banner.innerHTML = `✅ À ce rythme (${avg.toFixed(0)}€/j) ton budget tient <strong>encore ~${Math.floor(daysLeft)} jours</strong> — largement jusqu'au 15 mars.`;
+      } else {
+        banner.style.display = 'block';
+        banner.style.background = '#1f0d0d';
+        banner.style.border = '1px solid #3a1a1a';
+        banner.style.color = '#ff9a9a';
+        banner.innerHTML = `⚠️ À ce rythme (${avg.toFixed(0)}€/j) ton budget s'épuise vers le <strong>${endLabel}</strong> — il reste ~${tripDaysLeft} jours de voyage.`;
+      }
+    } else if (spent === 0) {
+      banner.style.display = 'none';
+    }
+
+    // CATEGORY ALERTS
+    const totals = {};
+    Object.keys(CAT_COLORS).forEach(c => totals[c] = 0);
+    state.expenses.forEach(e => { totals[e.cat] += toEur(e.amount, e.currency); });
+    const alerts = Object.entries(totals)
+      .filter(([cat, total]) => total >= CAT_THRESHOLDS[cat] * 0.8)
+      .map(([cat, total]) => {
+        const threshold = CAT_THRESHOLDS[cat];
+        const pct = Math.round((total / threshold) * 100);
+        const over = total >= threshold;
+        const color = over ? '#ff4747' : '#facc15';
+        const bg = over ? '#1f0808' : '#1f1600';
+        const border = over ? '#3a1010' : '#3a2a00';
+        const icon = over ? '🚨' : '⚡';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;background:${bg};border:1px solid ${border};border-radius:10px;padding:9px 12px;margin-bottom:7px;font-size:11px">
+          <span>${icon} ${CAT_ICONS[cat]} ${cat} — ${total.toFixed(0)}€ / ${threshold}€</span>
+          <span style="font-family:'Syne',sans-serif;font-weight:700;color:${color}">${pct}%</span>
+        </div>`;
+      });
+    document.getElementById('cat-alerts').innerHTML = alerts.join('');
   }
 
   function renderDays() {
