@@ -159,6 +159,7 @@
     <div class="date-info" id="header-date"></div>
   </div>
   <div class="budget-bar-wrap"><div class="budget-bar-fill" id="main-bar" style="width:0%"></div></div>
+  <div id="nyc-clock" style="font-size:10px;color:var(--muted);text-align:center;padding-top:6px;letter-spacing:0.3px"></div>
 </header>
 
 <!-- TRACKER -->
@@ -294,7 +295,7 @@
         </div>
       </div>
       <div class="conv-result" id="conv-result">—</div>
-      <div class="conv-rate">1€ = 1.18$ · Taux du jour</div>
+      <div class="conv-rate" id="conv-rate-label">1€ = 1.18$ · Chargement...</div>
       <div class="quick-amounts">
         <button class="quick-btn" onclick="setConvAmount(5)">5</button>
         <button class="quick-btn" onclick="setConvAmount(10)">10</button>
@@ -332,6 +333,7 @@
       <div id="panel-desc" style="font-size:12px;color:#aaa;line-height:1.6;margin-bottom:10px"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <span id="panel-price" style="font-size:10px;color:#34d399;background:#0d1f16;border:1px solid #1a3a2a;padding:3px 8px;border-radius:4px"></span>
+        <span id="panel-dist" style="font-size:10px;color:#38bdf8;background:#061a20;border:1px solid #0a2a3a;padding:3px 8px;border-radius:4px;display:none"></span>
         <span id="panel-tip" style="font-size:10px;color:#facc15;background:#1f1600;border:1px solid #3a2a00;padding:3px 8px;border-radius:4px"></span>
       </div>
     </div>
@@ -346,11 +348,58 @@
 </div>
 
 <script>
-  const RATE = 1.18;
+  let RATE = 1.18; // will be updated live from Frankfurter API
   const TOTAL_BUDGET = 2000;
   const TRIP_DAYS = 13;
   const DAILY_BUDGET = TOTAL_BUDGET / TRIP_DAYS;
   const TRIP_START = new Date('2026-03-03');
+
+  // Live exchange rate
+  async function fetchLiveRate() {
+    try {
+      const res = await fetch('https://api.frankfurter.app/latest?from=EUR&to=USD');
+      const data = await res.json();
+      if (data.rates && data.rates.USD) {
+        RATE = data.rates.USD;
+        document.getElementById('conv-rate-label').textContent = `1€ = ${RATE.toFixed(4)}$ · Taux en direct ✓`;
+        renderSummary();
+      }
+    } catch(e) {
+      document.getElementById('conv-rate-label').textContent = `1€ = ${RATE.toFixed(4)}$ · Taux hors ligne`;
+    }
+  }
+
+  // NYC clock
+  function updateNYCClock() {
+    const nyc = new Date().toLocaleString('fr-FR', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
+    const paris = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' });
+    const el = document.getElementById('nyc-clock');
+    if (el) el.textContent = `🗽 ${nyc} NYC · 🇫🇷 ${paris} Paris`;
+  }
+
+  // Geolocation
+  let userLat = null, userLng = null;
+
+  function haversine(lat1, lng1, lat2, lng2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  function formatDist(km) {
+    return km < 1 ? Math.round(km * 1000) + 'm' : km.toFixed(1) + 'km';
+  }
+
+  function requestGeolocation() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.watchPosition(pos => {
+      userLat = pos.coords.latitude;
+      userLng = pos.coords.longitude;
+      if (map) renderMapMarkers();
+    }, null, { enableHighAccuracy: true });
+  }
 
   const CAT_COLORS = { nourriture:'#ff9a3c', bars:'#c084fc', transport:'#38bdf8', shopping:'#fb7185', activites:'#34d399', logement:'#facc15' };
   const CAT_ICONS  = { nourriture:'🍔', bars:'🍺', transport:'🚇', shopping:'🛍️', activites:'🎯', logement:'🏠' };
@@ -705,17 +754,38 @@
     renderMapMarkers();
   }
 
+  let userMarker = null;
+
   function renderMapMarkers() {
     if (!map) return;
     markers.forEach(m => map.removeLayer(m));
     markers = [];
-    const filtered = activeFilter === 'all' ? SPOTS : SPOTS.filter(s => s.type === activeFilter);
+    if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
+
+    // User location dot
+    if (userLat !== null) {
+      const userIcon = L.divIcon({
+        html: `<div style="width:16px;height:16px;border-radius:50%;background:#38bdf8;border:3px solid #fff;box-shadow:0 0 12px #38bdf888"></div>`,
+        className: '', iconSize: [16,16], iconAnchor: [8,8]
+      });
+      userMarker = L.marker([userLat, userLng], { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
+    }
+
+    let filtered = activeFilter === 'all' ? SPOTS : SPOTS.filter(s => s.type === activeFilter);
+
+    // Sort by distance if geolocation available
+    if (userLat !== null) {
+      filtered = [...filtered].sort((a, b) =>
+        haversine(userLat, userLng, a.lat, a.lng) - haversine(userLat, userLng, b.lat, b.lng)
+      );
+    }
+
     filtered.forEach(spot => {
       const m = L.marker([spot.lat, spot.lng], { icon: makeIcon(spot) }).addTo(map);
       m.on('click', () => showSpotPanel(spot));
       markers.push(m);
     });
-    // Fit bounds
+
     if (markers.length > 0) {
       const group = L.featureGroup(markers);
       map.fitBounds(group.getBounds().pad(0.15));
@@ -728,6 +798,14 @@
     document.getElementById('panel-desc').textContent = spot.desc;
     document.getElementById('panel-price').textContent = '💰 ' + spot.price;
     document.getElementById('panel-tip').textContent = '💡 ' + spot.tip;
+    const distEl = document.getElementById('panel-dist');
+    if (userLat !== null) {
+      const km = haversine(userLat, userLng, spot.lat, spot.lng);
+      distEl.textContent = '📍 ' + formatDist(km) + ' de toi';
+      distEl.style.display = 'inline';
+    } else {
+      distEl.style.display = 'none';
+    }
     document.getElementById('spot-panel').style.display = 'block';
   }
 
@@ -750,6 +828,10 @@
   }
 
   renderAll();
+  fetchLiveRate();
+  updateNYCClock();
+  setInterval(updateNYCClock, 30000);
+  requestGeolocation();
 </script>
 </body>
 </html>
