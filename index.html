@@ -320,8 +320,18 @@
     <button class="filter-pill" data-filter="drague" onclick="filterSpots(this)">🔥 Draguer</button>
     <button class="filter-pill" data-filter="voir" onclick="filterSpots(this)">👀 À voir</button>
     <button class="filter-pill" data-filter="food" onclick="filterSpots(this)">🍔 Manger</button>
+    <button class="filter-pill" data-filter="safety" onclick="filterSpots(this)" style="border-color:#444">🛡️ Sécurité</button>
   </div>
   <div id="map" style="width:100%;height:calc(100vh - 220px);z-index:1"></div>
+
+  <!-- Safety legend -->
+  <div id="safety-legend" style="display:none;position:absolute;top:56px;right:12px;z-index:500;background:rgba(10,10,10,0.92);border:1px solid #333;border-radius:10px;padding:10px 12px;font-size:10px;backdrop-filter:blur(8px)">
+    <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:10px;color:#e8ff47;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.8px">Zones</div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><div style="width:10px;height:10px;border-radius:2px;background:rgba(52,211,153,0.5);border:1px solid #34d399"></div><span style="color:#ccc">Safe — touriste bienvenu</span></div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><div style="width:10px;height:10px;border-radius:2px;background:rgba(250,204,21,0.4);border:1px solid #facc15"></div><span style="color:#ccc">Attention — rester vigilant</span></div>
+    <div style="display:flex;align-items:center;gap:6px"><div style="width:10px;height:10px;border-radius:2px;background:rgba(255,71,71,0.4);border:1px solid #ff4747"></div><span style="color:#ccc">Éviter — surtout la nuit</span></div>
+  </div>
+
   <!-- Spot detail panel -->
   <div id="spot-panel" style="display:none;position:fixed;bottom:70px;left:0;right:0;z-index:1000;padding:0 12px">
     <div style="background:#1a1a1a;border:1px solid #333;border-radius:16px;padding:16px;box-shadow:0 -4px 30px rgba(0,0,0,0.6)">
@@ -746,12 +756,10 @@
   function initMap() {
     if (map) return;
     map = L.map('map', { zoomControl: false, attributionControl: false }).setView([40.730, -73.960], 12);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19
-    }).addTo(map);
-    // Add zoom control top-right
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
     L.control.zoom({ position: 'topright' }).addTo(map);
-    renderMapMarkers();
+    if (safetyVisible) renderSafetyZones();
+    else renderMapMarkers();
   }
 
   let userMarker = null;
@@ -809,12 +817,85 @@
     document.getElementById('spot-panel').style.display = 'block';
   }
 
+  const SAFETY_ZONES = [
+    // GREEN
+    { name: 'Midtown Manhattan', level: 'green', note: 'Zone touristique centrale, très sécurisée 24h/24.', coords: [[40.7614,-73.9776],[40.7614,-73.9700],[40.7480,-73.9700],[40.7480,-73.9776]] },
+    { name: 'Upper East Side', level: 'green', note: 'Quartier résidentiel aisé, très calme.', coords: [[40.7780,-73.9600],[40.7780,-73.9450],[40.7614,-73.9450],[40.7614,-73.9600]] },
+    { name: 'Greenwich Village / West Village', level: 'green', note: 'Très sûr, populaire le soir, beaucoup de restaurants et bars.', coords: [[40.7360,-74.0100],[40.7360,-73.9970],[40.7260,-73.9970],[40.7260,-74.0100]] },
+    { name: 'SoHo / Nolita', level: 'green', note: 'Shopping et restaurants, sûr à toute heure.', coords: [[40.7260,-74.0020],[40.7260,-73.9940],[40.7195,-73.9940],[40.7195,-74.0020]] },
+    { name: 'Lower East Side (centre)', level: 'green', note: 'Très animé la nuit, bars et clubs, sûr en groupe.', coords: [[40.7220,-73.9900],[40.7220,-73.9820],[40.7160,-73.9820],[40.7160,-73.9900]] },
+    { name: 'Williamsburg (centre)', level: 'green', note: 'Quartier hipster branché, sûr et animé.', coords: [[40.7200,-73.9650],[40.7200,-73.9530],[40.7100,-73.9530],[40.7100,-73.9650]] },
+    { name: 'DUMBO / Brooklyn Heights', level: 'green', note: 'Très touristique, résidentiel aisé, sûr.', coords: [[40.7060,-73.9950],[40.7060,-73.9850],[40.6960,-73.9850],[40.6960,-73.9950]] },
+    { name: 'Upper West Side', level: 'green', note: 'Résidentiel familial, Central Park, très sûr.', coords: [[40.7900,-73.9900],[40.7900,-73.9700],[40.7700,-73.9700],[40.7700,-73.9900]] },
+    { name: 'Chelsea / Meatpacking', level: 'green', note: 'Clubs et galeries, sûr. Éviter les rues isolées très tard.', coords: [[40.7480,-74.0100],[40.7480,-73.9970],[40.7360,-73.9970],[40.7360,-74.0100]] },
+    { name: 'Astoria (Queens)', level: 'green', note: 'Quartier résidentiel grec et méditerranéen, très sûr.', coords: [[40.7740,-73.9380],[40.7740,-73.9100],[40.7580,-73.9100],[40.7580,-73.9380]] },
+    // ORANGE
+    { name: 'Harlem (centre-ouest)', level: 'orange', note: 'En cours de gentrification. Sûr le jour, faire attention la nuit dans les rues secondaires.', coords: [[40.8150,-73.9650],[40.8150,-73.9400],[40.7960,-73.9400],[40.7960,-73.9650]] },
+    { name: 'Bushwick (Brooklyn)', level: 'orange', note: 'Clubs et bars le soir mais quartier mixte. Rester sur les axes principaux la nuit.', coords: [[40.7060,-73.9280],[40.7060,-73.9050],[40.6880,-73.9050],[40.6880,-73.9280]] },
+    { name: 'East Harlem (Spanish Harlem)', level: 'orange', note: 'Quartier hispanique animé. Sûr le jour, éviter les rues écartées après minuit.', coords: [[40.8000,-73.9400],[40.8000,-73.9200],[40.7850,-73.9200],[40.7850,-73.9400]] },
+    { name: 'Jamaica (Queens)', level: 'orange', note: 'Quartier populaire. Faire attention aux pickpockets, éviter la nuit.', coords: [[40.7020,-73.8050],[40.7020,-73.7800],[40.6860,-73.7800],[40.6860,-73.8050]] },
+    { name: 'Flatbush (Brooklyn)', level: 'orange', note: 'Quartier caribéen dense. Animé le jour, plus incertain la nuit.', coords: [[40.6520,-73.9650],[40.6520,-73.9400],[40.6320,-73.9400],[40.6320,-73.9650]] },
+    { name: 'Mott Haven (South Bronx nord)', level: 'orange', note: 'En gentrification rapide. Restaurants et galeries arrivent. Rester vigilant la nuit.', coords: [[40.8100,-73.9300],[40.8100,-73.9100],[40.7950,-73.9100],[40.7950,-73.9300]] },
+    // RED
+    { name: 'Hunts Point (Bronx)', level: 'red', note: 'Un des quartiers les plus dangereux de NYC. Aucune raison touristique d\'y aller.', coords: [[40.8200,-73.9000],[40.8200,-73.8750],[40.8000,-73.8750],[40.8000,-73.9000]] },
+    { name: 'Brownsville (Brooklyn)', level: 'red', note: 'Taux de criminalité élevé. À éviter complètement, jour comme nuit.', coords: [[40.6640,-73.9200],[40.6640,-73.8980],[40.6440,-73.8980],[40.6440,-73.9200]] },
+    { name: 'East New York (Brooklyn)', level: 'red', note: 'Aucun intérêt touristique, zone résidentielle dangereuse.', coords: [[40.6700,-73.8900],[40.6700,-73.8650],[40.6480,-73.8650],[40.6480,-73.8900]] },
+    { name: 'Far Rockaway (Queens)', level: 'red', note: 'Péninsule isolée avec forte criminalité. Loin de tout.', coords: [[40.6050,-73.7700],[40.6050,-73.7450],[40.5880,-73.7450],[40.5880,-73.7700]] },
+  ];
+
+  const SAFETY_CONFIG = {
+    green:  { color: '#34d399', fillOpacity: 0.15, weight: 2 },
+    orange: { color: '#facc15', fillOpacity: 0.18, weight: 2 },
+    red:    { color: '#ff4747', fillOpacity: 0.20, weight: 2 },
+  };
+
+  let safetyLayers = [];
+  let safetyVisible = false;
+
+  function renderSafetyZones() {
+    safetyLayers.forEach(l => map.removeLayer(l));
+    safetyLayers = [];
+    if (!safetyVisible) return;
+    SAFETY_ZONES.forEach(zone => {
+      const cfg = SAFETY_CONFIG[zone.level];
+      const poly = L.polygon(zone.coords, {
+        color: cfg.color,
+        fillColor: cfg.color,
+        fillOpacity: cfg.fillOpacity,
+        weight: cfg.weight,
+        opacity: 0.7,
+      }).addTo(map);
+      poly.bindPopup(`
+        <div style="font-family:'DM Mono',monospace;font-size:12px;min-width:180px">
+          <div style="font-weight:700;font-size:13px;margin-bottom:4px;color:${cfg.color}">${zone.name}</div>
+          <div style="color:#555;font-size:11px">${zone.note}</div>
+        </div>
+      `, { className: 'safety-popup' });
+      safetyLayers.push(poly);
+    });
+  }
+
   function filterSpots(btn) {
     document.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     activeFilter = btn.dataset.filter;
-    renderMapMarkers();
     document.getElementById('spot-panel').style.display = 'none';
+
+    if (activeFilter === 'safety') {
+      safetyVisible = true;
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+      document.getElementById('safety-legend').style.display = 'block';
+      if (map) {
+        renderSafetyZones();
+        map.setView([40.730, -73.960], 12);
+      }
+    } else {
+      safetyVisible = false;
+      document.getElementById('safety-legend').style.display = 'none';
+      renderSafetyZones();
+      renderMapMarkers();
+    }
   }
 
   // Init map when tab is clicked
