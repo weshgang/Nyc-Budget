@@ -7,6 +7,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>NYC Budget</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -312,7 +314,22 @@
     <button class="filter-pill" data-filter="voir" onclick="filterSpots(this)">👀 À voir</button>
     <button class="filter-pill" data-filter="food" onclick="filterSpots(this)">🍔 Manger</button>
   </div>
-  <div class="spot-list" id="spot-list"></div>
+  <div id="map" style="width:100%;height:calc(100vh - 220px);z-index:1"></div>
+  <!-- Spot detail panel -->
+  <div id="spot-panel" style="display:none;position:fixed;bottom:70px;left:0;right:0;z-index:1000;padding:0 12px">
+    <div style="background:#1a1a1a;border:1px solid #333;border-radius:16px;padding:16px;box-shadow:0 -4px 30px rgba(0,0,0,0.6)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+        <div id="panel-name" style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px;flex:1"></div>
+        <button onclick="document.getElementById('spot-panel').style.display='none'" style="background:none;border:none;color:#666;font-size:20px;cursor:pointer;padding:0 0 0 8px">×</button>
+      </div>
+      <div id="panel-badge" style="font-size:10px;margin-bottom:8px"></div>
+      <div id="panel-desc" style="font-size:12px;color:#aaa;line-height:1.6;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <span id="panel-price" style="font-size:10px;color:#34d399;background:#0d1f16;border:1px solid #1a3a2a;padding:3px 8px;border-radius:4px"></span>
+        <span id="panel-tip" style="font-size:10px;color:#facc15;background:#1f1600;border:1px solid #3a2a00;padding:3px 8px;border-radius:4px"></span>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="tab-bar">
@@ -522,14 +539,6 @@
 
   function deleteExpense(idx) { state.expenses.splice(idx, 1); save(); renderAll(); }
 
-  function switchTab(tab, btn) {
-    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-    document.getElementById('view-'+tab).classList.add('active');
-    btn.classList.add('active');
-    if (tab==='stats') renderStats();
-  }
-
   function setConvDir(dir) {
     convDir = dir;
     document.getElementById('conv-from-eur').classList.toggle('active', dir==='EUR');
@@ -578,91 +587,113 @@
     document.getElementById('rp-total-eur').textContent = '≈ ' + totalEur.toFixed(2) + '€';
   }
 
-  // SPOTS DATA
+  // SPOTS DATA with real GPS coordinates
   const SPOTS = [
-    // LOWER EAST SIDE
-    { zone: 'Lower East Side', zoneSub: 'Le quartier le plus jeune de Manhattan · bars dès 23h, énergie de rue', name: 'Rumpus Room', type: 'bar', badge: '🔥 Tendance', badgeColor: '#ff9a3c', desc: 'Rétro-moderne, Prosecco à la tiraison, soirées 80s/90s. Crowd 22-32 ans, mix hommes/femmes sympa.', price: 'Cocktails ~18$', vibe: 'Social / draguer', tip: 'Y aller vers 23h-minuit' },
-    { zone: 'Lower East Side', zoneSub: '', name: 'The Delancey', type: 'club', badge: '🕺 Club', badgeColor: '#c084fc', desc: 'Club sur 3 niveaux avec rooftop. Garden bar en haut, dancefloor en bas. Crowd jeune et mixte.', price: 'Cover ~15$ · Bière ~10$', vibe: 'Danser / rencontrer', tip: 'Rooftop = meilleur spot pour aborder' },
-    { zone: 'Lower East Side', zoneSub: '', name: 'Mehanata Bulgarian Bar', type: 'bar', badge: '💃 Ambiance', badgeColor: '#34d399', desc: 'Bar bulgare délirant avec shots de vodka glacée dans un cercueil de glace. Crowd international jeune, très festif.', price: 'Shots ~8$ · Entrée gratuite', vibe: 'Festif / étranger', tip: 'Shot ceremony = brise-glace parfait' },
-    { zone: 'Lower East Side', zoneSub: '', name: 'Pianos', type: 'bar', badge: '🎵 Live music', badgeColor: '#38bdf8', desc: 'Bar à deux étages avec live music en bas et dancefloor en haut. Très populaire chez les 21-28 ans.', price: 'Bière ~9$ · Entrée ~10$', vibe: 'Rencontrer / concert', tip: 'Mardi-mercredi = moins bondé, plus facile à parler' },
-
-    // WILLIAMSBURG
-    { zone: 'Williamsburg, Brooklyn', zoneSub: 'Le spot le plus cool de Brooklyn · 25 min en L train depuis Manhattan', name: 'Good Room', type: 'club', badge: '🎧 Underground', badgeColor: '#c084fc', desc: 'Club house/techno de référence à Greenpoint. Sound system incroyable, crowd branché 24-34 ans, pas de bottle service BS.', price: 'Tickets ~25-35$ · Bière ~10$', vibe: 'Dancefloor pur', tip: 'Acheter les tickets en avance sur RA' },
-    { zone: 'Williamsburg, Brooklyn', zoneSub: '', name: 'Loosie\'s', type: 'club', badge: '🕺 Hot Club', badgeColor: '#c084fc', desc: 'Un des clubs les plus hot de NYC en ce moment. Design cutting-edge, musique house/hip-hop, crowd 22-30 ans.', price: 'Cover ~20$ · Cocktails ~18$', vibe: 'Voir et être vu', tip: 'Réserver via leur IG pour éviter la queue' },
-    { zone: 'Williamsburg, Brooklyn', zoneSub: '', name: 'Westlight Rooftop', type: 'bar', badge: '🌃 Rooftop', badgeColor: '#facc15', desc: 'Rooftop bar au 22ème étage avec vue Manhattan. Crowd 25-35 ans, bien habillé. Idéal pour une première sortie.', price: 'Cocktails ~22$ · Entrée libre', vibe: 'Impressionner / voir', tip: 'Dress code smart casual obligatoire' },
-    { zone: 'Williamsburg, Brooklyn', zoneSub: '', name: 'Nitehawk Cinema', type: 'voir', badge: '🎬 Unique', badgeColor: '#38bdf8', desc: 'Cinéma où tu manges et bois pendant le film. Dates faciles, ambiance détendue, très bon plan pour un premier rendez-vous.', price: 'Ticket ~22$ · Food ~20$', vibe: 'Date / chill', tip: 'Réserver en avance, toujours complet le week-end' },
-
-    // EAST VILLAGE
-    { zone: 'East Village', zoneSub: 'Bars alternatifs, crowd étudiant et jeune, moins cher que LES', name: 'Avant Gardner / Brooklyn Mirage', type: 'club', badge: '🏟️ Festival', badgeColor: '#c084fc', desc: 'Entrepôt géant transformé en club. Les plus grands DJs du monde y jouent. Incontournable si un bon DJ est de passage.', price: 'Tickets ~40-80$ · Bière ~12$', vibe: 'Rave / concert', tip: 'Vérifier la programmation sur leur site avant' },
-    { zone: 'East Village', zoneSub: '', name: 'Beauty Bar', type: 'drague', badge: '🔥 Draguer', badgeColor: '#ff4747', desc: 'Bar dans un ancien salon de coiffure. Crowd 21-30 ans, décontracté, très bon pour rencontrer des gens. Pas de prise de tête.', price: 'Bière ~8$ · Cocktails ~14$', vibe: 'Aborder facilement', tip: 'Happy hour 18h-20h = beaucoup de monde' },
-    { zone: 'East Village', zoneSub: '', name: 'McSorley\'s Old Ale House', type: 'bar', badge: '🏛️ Historique', badgeColor: '#facc15', desc: 'Le plus vieux bar de NYC (1854). Cash only, uniquement deux bières. Touristique mais authentique, tout le monde parle à tout le monde.', price: 'Bière ~6$ (cash)', vibe: 'Historique / social', tip: 'Cash uniquement · Bonne excuse pour parler aux gens' },
-
-    // MEATPACKING / CHELSEA
-    { zone: 'Meatpacking District', zoneSub: 'Clubs haut de gamme, crowd fashion et bouché · à faire au moins une fois', name: 'Le Bain (The Standard)', type: 'club', badge: '✨ Prestige', badgeColor: '#e8ff47', desc: 'Discotheque au sommet du Standard Hotel avec vue Hudson River. Jacuzzi sur le dancefloor. Crowd jeune et stylé.', price: 'Cover ~30$ · Cocktails ~25$', vibe: 'Voir et être vu', tip: 'Arriver avant 23h pour éviter la queue' },
-    { zone: 'Meatpacking District', zoneSub: '', name: 'Nebula', type: 'club', badge: '🚀 Mega Club', badgeColor: '#c084fc', desc: 'Plus grand club de Manhattan. Plafond LED géant, DJs internationaux, EDM/House. Grosse expérience.', price: 'Tickets ~40-60$', vibe: 'Grosse soirée', tip: 'Y aller en groupe, c\'est difficile de parler avec la musique' },
-    { zone: 'Meatpacking District', zoneSub: '', name: 'The High Line', type: 'voir', badge: '👀 Incontournable', badgeColor: '#34d399', desc: 'Ancienne voie ferrée transformée en parc suspendu. 2,5km de balade avec vue sur Manhattan et le Hudson. Gratuit.', price: 'Gratuit', vibe: 'Balade / photos', tip: 'Y aller en fin d\'après-midi pour le coucher de soleil' },
-
-    // BUSHWICK
-    { zone: 'Bushwick, Brooklyn', zoneSub: 'Le quartier le plus underground de NYC · crowd artiste et alternatif', name: 'House of Yes', type: 'club', badge: '🎭 Unique', badgeColor: '#fb7185', desc: 'Club-théâtre avec soirées à thème, drag, burlesque. Crowd très ouvert, costumes encouragés. Expérience à part.', price: 'Tickets ~20-30$ · Cocktails ~16$', vibe: 'Festif / unique', tip: 'Se déguiser = meilleur moyen de briser la glace' },
-    { zone: 'Bushwick, Brooklyn', zoneSub: '', name: 'Elsewhere', type: 'club', badge: '🎧 Multi-room', badgeColor: '#c084fc', desc: '3 salles avec ambiances différentes. Underground DJs + A-list parfois. Rooftop en été. Crowd 21-30 ans passionné de musique.', price: 'Tickets ~20-40$', vibe: 'Musique sérieuse', tip: 'Vérifier leur IG pour la programmation hebdo' },
-
-    // MIDTOWN / SIGHTSEEING
-    { zone: 'Midtown & Manhattan', zoneSub: 'Tourisme, skyline, incontournables visuels', name: 'Top of the Rock (Rockefeller)', type: 'voir', badge: '🏙️ Vue 360°', badgeColor: '#38bdf8', desc: 'La meilleure vue sur Manhattan avec l\'Empire State Building en face. Sunset = timing parfait.', price: '~40$ · Réserver en ligne', vibe: 'Incontournable', tip: 'Réserver le créneau 1h avant le coucher du soleil' },
-    { zone: 'Midtown & Manhattan', zoneSub: '', name: 'Central Park', type: 'voir', badge: '🌿 Gratuit', badgeColor: '#34d399', desc: '340 hectares au cœur de Manhattan. Jogger, pique-niquer, ou juste marcher. Beaucoup de locals le week-end.', price: 'Gratuit', vibe: 'Détente / local', tip: 'Louer un vélo pour faire le tour complet (~1h30)' },
-    { zone: 'Midtown & Manhattan', zoneSub: '', name: 'Empire State Building', type: 'voir', badge: '🗽 Icone', badgeColor: '#facc15', desc: 'Vue classique sur NYC depuis le 86ème étage. Vaut plus le coup la nuit pour les lumières.', price: '~44$ · Réserver en ligne', vibe: 'Touristique', tip: 'Acheter le ticket en avance pour éviter 1h de queue' },
-
-    // FOOD
-    { zone: 'Food — Incontournables', zoneSub: 'Les adresses que tout le monde recommande', name: 'Katz\'s Delicatessen', type: 'food', badge: '🥩 Mythique', badgeColor: '#ff9a3c', desc: 'Le pastrami sandwich le plus célèbre de NYC. Dans le film When Harry Met Sally. File d\'attente mais ça vaut le coup.', price: 'Sandwich ~25-30$', vibe: 'Historique', tip: 'Garder ton ticket sinon tu pais le double à la sortie' },
-    { zone: 'Food — Incontournables', zoneSub: '', name: 'Joe\'s Pizza (Greenwich Village)', type: 'food', badge: '🍕 NY Classique', badgeColor: '#ff9a3c', desc: 'La pizza new yorkaise old-school à 3-4$ la part. Debout sur le trottoir, rapide, parfait à 2h du mat après une soirée.', price: 'Part ~4$', vibe: 'Rapide / authentique', tip: 'Toujours ouverte tard, parfait après une soirée' },
-    { zone: 'Food — Incontournables', zoneSub: '', name: 'Chelsea Market', type: 'food', badge: '🏪 Food Hall', badgeColor: '#fb7185', desc: 'Marché couvert avec des dizaines de stands. Tacos, sushi, lobster roll, desserts. Lunch parfait avant le High Line.', price: 'Repas ~15-25$', vibe: 'Varié / bon', tip: 'Y aller à midi en semaine pour éviter la foule' },
-    { zone: 'Food — Incontournables', zoneSub: '', name: 'Smorgasburg (Williamsburg)', type: 'food', badge: '🌞 Week-end', badgeColor: '#34d399', desc: 'Marché food outdoor le samedi à Williamsburg. 100 vendeurs, cuisine du monde entière. Très fréquenté par les jeunes locals.', price: 'Plats ~12-18$ · Gratuit', vibe: 'Social / découverte', tip: 'Spot de rencontres naturel — très facile de parler aux gens' },
+    { name: 'The Delancey', type: 'club', lat: 40.7188, lng: -73.9851, badge: '🕺 Club', color: '#c084fc', desc: 'Club sur 3 niveaux avec rooftop. Garden bar en haut, dancefloor en bas. Crowd jeune et mixte.', price: 'Cover ~15$ · Bière ~10$', tip: 'Rooftop = meilleur spot pour aborder' },
+    { name: 'Mehanata Bulgarian Bar', type: 'bar', lat: 40.7191, lng: -73.9945, badge: '💃 Ambiance', color: '#34d399', desc: 'Bar bulgare délirant avec shots de vodka glacée dans un cercueil de glace. Crowd international, très festif.', price: 'Shots ~8$ · Entrée gratuite', tip: 'Shot ceremony = brise-glace parfait' },
+    { name: 'Pianos', type: 'bar', lat: 40.7194, lng: -73.9884, badge: '🎵 Live music', color: '#38bdf8', desc: 'Bar à deux étages avec live music en bas, dancefloor en haut. Très populaire chez les 21-28 ans.', price: 'Bière ~9$ · Entrée ~10$', tip: 'Mardi-mercredi = moins bondé, plus facile à parler' },
+    { name: 'Beauty Bar', type: 'drague', lat: 40.7264, lng: -73.9857, badge: '🔥 Draguer', color: '#ff4747', desc: 'Bar dans un ancien salon de coiffure. Crowd 21-30 ans, décontracté. Pas de prise de tête.', price: 'Bière ~8$ · Cocktails ~14$', tip: 'Happy hour 18h-20h = beaucoup de monde' },
+    { name: "McSorley's Old Ale House", type: 'bar', lat: 40.7282, lng: -73.9876, badge: '🏛️ Historique', color: '#facc15', desc: 'Le plus vieux bar de NYC (1854). Cash only, deux bières seulement. Tout le monde parle à tout le monde.', price: 'Bière ~6$ (cash)', tip: 'Cash uniquement · Tout le monde parle à tout le monde' },
+    { name: 'Good Room', type: 'club', lat: 40.7282, lng: -73.9533, badge: '🎧 Underground', color: '#c084fc', desc: 'Club house/techno de référence à Greenpoint. Sound system incroyable, crowd branché 24-34 ans.', price: 'Tickets ~25-35$', tip: 'Acheter les tickets en avance sur Resident Advisor' },
+    { name: "Loosie's", type: 'club', lat: 40.7131, lng: -73.9634, badge: '🕺 Hot Club', color: '#c084fc', desc: 'Un des clubs les plus hot de NYC. Design cutting-edge, musique house/hip-hop, crowd 22-30 ans.', price: 'Cover ~20$ · Cocktails ~18$', tip: 'Réserver via leur IG pour éviter la queue' },
+    { name: 'Westlight Rooftop', type: 'bar', lat: 40.7174, lng: -73.9574, badge: '🌃 Rooftop', color: '#facc15', desc: 'Rooftop bar au 22ème étage avec vue Manhattan. Crowd 25-35 ans, bien habillé.', price: 'Cocktails ~22$ · Entrée libre', tip: 'Dress code smart casual obligatoire' },
+    { name: 'Nitehawk Cinema', type: 'voir', lat: 40.7139, lng: -73.9614, badge: '🎬 Date', color: '#38bdf8', desc: 'Cinéma où tu manges et bois pendant le film. Très bon plan pour un premier rendez-vous.', price: 'Ticket ~22$ · Food ~20$', tip: 'Réserver en avance, toujours complet le week-end' },
+    { name: 'House of Yes', type: 'club', lat: 40.7051, lng: -73.9241, badge: '🎭 Unique', color: '#fb7185', desc: 'Club-théâtre avec soirées à thème, drag, burlesque. Crowd très ouvert, costumes encouragés.', price: 'Tickets ~20-30$', tip: 'Se déguiser = meilleur moyen de briser la glace' },
+    { name: 'Elsewhere', type: 'club', lat: 40.7048, lng: -73.9228, badge: '🎧 Multi-room', color: '#c084fc', desc: '3 salles avec ambiances différentes. Underground DJs + rooftop. Crowd 21-30 ans.', price: 'Tickets ~20-40$', tip: 'Vérifier leur IG pour la programmation hebdo' },
+    { name: 'Le Bain (The Standard)', type: 'club', lat: 40.7401, lng: -74.0082, badge: '✨ Prestige', color: '#e8ff47', desc: 'Discotheque au sommet du Standard Hotel avec vue Hudson River. Jacuzzi sur le dancefloor.', price: 'Cover ~30$ · Cocktails ~25$', tip: 'Arriver avant 23h pour éviter la queue' },
+    { name: 'Nebula', type: 'club', lat: 40.7580, lng: -73.9855, badge: '🚀 Mega Club', color: '#c084fc', desc: 'Plus grand club de Manhattan. Plafond LED géant, DJs internationaux, EDM/House.', price: 'Tickets ~40-60$', tip: "Y aller en groupe, difficile de parler avec le volume" },
+    { name: 'The High Line', type: 'voir', lat: 40.7480, lng: -74.0048, badge: '👀 Incontournable', color: '#34d399', desc: 'Ancienne voie ferrée transformée en parc suspendu. 2,5km avec vue Hudson. Gratuit.', price: 'Gratuit', tip: "Y aller en fin d'après-midi pour le coucher du soleil" },
+    { name: 'Top of the Rock', type: 'voir', lat: 40.7587, lng: -73.9787, badge: '🏙️ Vue 360°', color: '#38bdf8', desc: 'La meilleure vue sur Manhattan avec Empire State en face. Sunset = timing parfait.', price: '~40$ · Réserver en ligne', tip: 'Créneau 1h avant le coucher du soleil' },
+    { name: 'Central Park', type: 'voir', lat: 40.7851, lng: -73.9683, badge: '🌿 Gratuit', color: '#34d399', desc: '340 hectares au cœur de Manhattan. Beaucoup de locals le week-end, facile de parler aux gens.', price: 'Gratuit', tip: 'Louer un vélo pour faire le tour complet (~1h30)' },
+    { name: 'Empire State Building', type: 'voir', lat: 40.7484, lng: -73.9857, badge: '🗽 Icone', color: '#facc15', desc: 'Vue classique depuis le 86ème étage. Plus impressionnant la nuit pour les lumières.', price: '~44$ · Réserver en ligne', tip: "Acheter le ticket en avance pour éviter 1h de queue" },
+    { name: "Katz's Delicatessen", type: 'food', lat: 40.7223, lng: -73.9873, badge: '🥩 Mythique', color: '#ff9a3c', desc: "Le pastrami sandwich le plus célèbre de NYC. Dans When Harry Met Sally.", price: 'Sandwich ~25-30$', tip: 'Garder ton ticket sinon tu paies le double à la sortie' },
+    { name: "Joe's Pizza", type: 'food', lat: 40.7306, lng: -74.0025, badge: '🍕 NY Classique', color: '#ff9a3c', desc: 'La pizza new yorkaise à 3-4$ la part. Parfait à 2h du mat après une soirée.', price: 'Part ~4$', tip: 'Toujours ouvert tard' },
+    { name: 'Chelsea Market', type: 'food', lat: 40.7424, lng: -74.0060, badge: '🏪 Food Hall', color: '#fb7185', desc: 'Marché couvert avec des dizaines de stands. Tacos, sushi, lobster roll.', price: 'Repas ~15-25$', tip: 'Y aller à midi en semaine pour éviter la foule' },
+    { name: 'Smorgasburg', type: 'food', lat: 40.7224, lng: -73.9608, badge: '🌞 Week-end', color: '#34d399', desc: 'Marché food outdoor le samedi à Williamsburg. 100 vendeurs. Spot de rencontres naturel.', price: 'Plats ~12-18$ · Entrée gratuite', tip: 'Très facile de parler aux gens ici' },
+    { name: 'Brooklyn Bridge', type: 'voir', lat: 40.7061, lng: -73.9969, badge: '🌉 Incontournable', color: '#38bdf8', desc: 'Traversée à pied depuis Manhattan en ~30min. Vue sur le skyline incomparable.', price: 'Gratuit', tip: 'Le matin tôt ou en soirée pour éviter la foule' },
+    { name: 'DUMBO', type: 'voir', lat: 40.7033, lng: -73.9881, badge: '📸 Photos', color: '#fb7185', desc: "Le spot photo le plus iconique de NYC — Manhattan Bridge entre deux immeubles. Quartier branché avec galeries et cafés.", price: 'Gratuit', tip: 'Washington Street = photo parfaite du pont' },
   ];
 
   let activeFilter = 'all';
+  let map = null;
+  let markers = [];
+
+  const TYPE_ICONS = {
+    club:   { emoji: '🕺', bg: '#1a0a2a' },
+    bar:    { emoji: '🍺', bg: '#1a1000' },
+    drague: { emoji: '🔥', bg: '#2a0808' },
+    voir:   { emoji: '👀', bg: '#081a10' },
+    food:   { emoji: '🍔', bg: '#1a0d00' },
+  };
+
+  function makeIcon(spot) {
+    const t = TYPE_ICONS[spot.type] || { emoji: '📍', bg: '#111' };
+    const html = `<div style="
+      width:36px;height:36px;border-radius:50%;
+      background:${spot.color}22;
+      border:2px solid ${spot.color};
+      display:flex;align-items:center;justify-content:center;
+      font-size:16px;box-shadow:0 2px 8px ${spot.color}55;
+    ">${t.emoji}</div>`;
+    return L.divIcon({ html, className: '', iconSize: [36, 36], iconAnchor: [18, 18] });
+  }
+
+  function initMap() {
+    if (map) return;
+    map = L.map('map', { zoomControl: false, attributionControl: false }).setView([40.730, -73.960], 12);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19
+    }).addTo(map);
+    // Add zoom control top-right
+    L.control.zoom({ position: 'topright' }).addTo(map);
+    renderMapMarkers();
+  }
+
+  function renderMapMarkers() {
+    if (!map) return;
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
+    const filtered = activeFilter === 'all' ? SPOTS : SPOTS.filter(s => s.type === activeFilter);
+    filtered.forEach(spot => {
+      const m = L.marker([spot.lat, spot.lng], { icon: makeIcon(spot) }).addTo(map);
+      m.on('click', () => showSpotPanel(spot));
+      markers.push(m);
+    });
+    // Fit bounds
+    if (markers.length > 0) {
+      const group = L.featureGroup(markers);
+      map.fitBounds(group.getBounds().pad(0.15));
+    }
+  }
+
+  function showSpotPanel(spot) {
+    document.getElementById('panel-name').textContent = spot.name;
+    document.getElementById('panel-badge').innerHTML = `<span style="background:${spot.color}22;color:${spot.color};border:1px solid ${spot.color}44;padding:2px 8px;border-radius:10px;font-size:10px">${spot.badge}</span>`;
+    document.getElementById('panel-desc').textContent = spot.desc;
+    document.getElementById('panel-price').textContent = '💰 ' + spot.price;
+    document.getElementById('panel-tip').textContent = '💡 ' + spot.tip;
+    document.getElementById('spot-panel').style.display = 'block';
+  }
 
   function filterSpots(btn) {
     document.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     activeFilter = btn.dataset.filter;
-    renderSpots();
+    renderMapMarkers();
+    document.getElementById('spot-panel').style.display = 'none';
   }
 
-  function renderSpots() {
-    const list = document.getElementById('spot-list');
-    const filtered = activeFilter === 'all' ? SPOTS : SPOTS.filter(s => s.type === activeFilter);
-
-    // group by zone
-    const zones = {};
-    filtered.forEach(s => {
-      if (!zones[s.zone]) zones[s.zone] = { sub: s.zoneSub, spots: [] };
-      zones[s.zone].spots.push(s);
-    });
-
-    let html = '';
-    Object.entries(zones).forEach(([zone, data]) => {
-      html += `<div class="zone-header">${zone}</div>`;
-      if (data.sub) html += `<div class="zone-sub">${data.sub}</div>`;
-      data.spots.forEach(s => {
-        html += `<div class="spot-card">
-          <div class="spot-header">
-            <div class="spot-name">${s.name}</div>
-            <div class="spot-badge" style="background:${s.badgeColor}20;color:${s.badgeColor};border:1px solid ${s.badgeColor}40">${s.badge}</div>
-          </div>
-          <div class="spot-desc">${s.desc}</div>
-          <div class="spot-meta">
-            <span class="spot-tag price">💰 ${s.price}</span>
-            <span class="spot-tag vibe">✨ ${s.vibe}</span>
-            <span class="spot-tag tip">💡 ${s.tip}</span>
-          </div>
-        </div>`;
-      });
-    });
-
-    list.innerHTML = html || '<div class="empty-state"><span class="big">🔍</span>Aucun spot dans cette catégorie</div>';
+  // Init map when tab is clicked
+  function switchTab(tab, btn) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('view-' + tab).classList.add('active');
+    btn.classList.add('active');
+    if (tab === 'stats') renderStats();
+    if (tab === 'map') { setTimeout(initMap, 50); }
   }
 
   renderAll();
-  renderSpots();
 </script>
 </body>
 </html>
