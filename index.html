@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>NYC Budget</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a0a; --surface: #141414; --border: #242424; --text: #f0f0f0; --muted: #666;
+    --accent: #e8ff47; --danger: #ff4747; --food: #ff9a3c; --bars: #c084fc;
+    --transport: #38bdf8; --shopping: #fb7185; --activites: #34d399; --logement: #facc15;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'DM Mono', monospace; min-height: 100vh; padding-bottom: 100px; }
+  header { position: sticky; top: 0; z-index: 100; background: var(--bg); border-bottom: 1px solid var(--border); padding: 14px 20px 10px; }
+  .header-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+  h1 { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 22px; letter-spacing: -0.5px; color: var(--accent); }
+  .date-info { font-size: 10px; color: var(--muted); text-align: right; line-height: 1.7; }
+  .budget-bar-wrap { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .budget-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s cubic-bezier(.4,0,.2,1); background: var(--accent); }
+  .budget-bar-fill.danger { background: var(--danger); }
+  .budget-bar-fill.warning { background: var(--logement); }
+  .budget-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 14px 20px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+  .stat-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
+  .stat-value { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 17px; }
+  .stat-value.green { color: var(--activites); } .stat-value.red { color: var(--danger); } .stat-value.yellow { color: var(--logement); }
+  .stat-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .section-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); padding: 0 20px; margin-bottom: 8px; }
+  .days-scroll { display: flex; gap: 8px; padding: 0 20px 14px; overflow-x: auto; scrollbar-width: none; }
+  .days-scroll::-webkit-scrollbar { display: none; }
+  .day-pill { flex-shrink: 0; width: 52px; text-align: center; padding: 8px 4px; border-radius: 10px; border: 1px solid var(--border); cursor: pointer; transition: all 0.2s; background: var(--surface); }
+  .day-pill.active { background: var(--accent); border-color: var(--accent); color: #0a0a0a; }
+  .day-pill.has-data { border-color: #333; }
+  .day-pill.over-budget { border-color: var(--danger); }
+  .day-pill.today-pill { border-color: var(--accent); }
+  .day-num { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 16px; line-height: 1; }
+  .day-label { font-size: 9px; opacity: 0.7; margin-top: 2px; }
+  .day-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); margin: 3px auto 0; opacity: 0; }
+  .day-pill.has-data .day-dot { opacity: 1; }
+  .day-pill.active .day-dot { background: #0a0a0a; }
+  .day-pill.over-budget .day-dot { background: var(--danger); opacity: 1; }
+  .day-totals { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin: 0 20px 14px; }
+  .day-totals-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .day-totals-label { font-size: 11px; color: var(--muted); }
+  .day-totals-val { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 16px; }
+  .mini-bar-wrap { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-bottom: 4px; }
+  .mini-bar-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+  .add-section { padding: 0 20px 14px; }
+  .add-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
+  .add-card h3 { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; margin-bottom: 12px; color: var(--accent); }
+  .input-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 10px; align-items: center; }
+  input[type="text"], input[type="number"] { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: 'DM Mono', monospace; font-size: 13px; padding: 10px 12px; width: 100%; outline: none; transition: border-color 0.2s; -webkit-appearance: none; }
+  input[type="text"]:focus, input[type="number"]:focus { border-color: var(--accent); }
+  input[type="number"] { width: 110px; }
+  .currency-toggle { display: flex; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .currency-toggle button { flex: 1; padding: 10px; border: none; background: transparent; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+  .currency-toggle button.active { background: var(--accent); color: #0a0a0a; font-weight: 500; }
+  .cat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px; }
+  .cat-btn { padding: 8px 4px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); font-family: 'DM Mono', monospace; font-size: 9px; text-align: center; cursor: pointer; transition: all 0.2s; line-height: 1.4; }
+  .cat-btn .cat-icon { font-size: 18px; display: block; margin-bottom: 2px; }
+  .cat-btn.active[data-cat="nourriture"] { background: var(--food); border-color: var(--food); color: #0a0a0a; }
+  .cat-btn.active[data-cat="bars"] { background: var(--bars); border-color: var(--bars); color: #0a0a0a; }
+  .cat-btn.active[data-cat="transport"] { background: var(--transport); border-color: var(--transport); color: #0a0a0a; }
+  .cat-btn.active[data-cat="shopping"] { background: var(--shopping); border-color: var(--shopping); color: #0a0a0a; }
+  .cat-btn.active[data-cat="activites"] { background: var(--activites); border-color: var(--activites); color: #0a0a0a; }
+  .cat-btn.active[data-cat="logement"] { background: var(--logement); border-color: var(--logement); color: #0a0a0a; }
+  .add-btn { width: 100%; padding: 12px; background: var(--accent); color: #0a0a0a; border: none; border-radius: 10px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px; cursor: pointer; transition: opacity 0.2s, transform 0.1s; }
+  .add-btn:active { transform: scale(0.98); opacity: 0.9; }
+  .expenses-section { padding: 0 20px; }
+  .expense-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); animation: slideIn 0.3s ease; }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+  .expense-cat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .expense-info { flex: 1; }
+  .expense-desc { font-size: 13px; color: var(--text); }
+  .expense-meta { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .expense-amount { text-align: right; }
+  .expense-eur { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px; }
+  .expense-usd { font-size: 10px; color: var(--muted); margin-top: 1px; }
+  .delete-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 18px; padding: 4px; }
+  .delete-btn:active { color: var(--danger); }
+  .empty-state { text-align: center; padding: 32px 0; color: var(--muted); font-size: 12px; line-height: 2; }
+  .empty-state .big { font-size: 32px; display: block; margin-bottom: 8px; }
+  .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(10,10,10,0.96); backdrop-filter: blur(12px); border-top: 1px solid var(--border); display: flex; z-index: 200; }
+  .tab-btn { flex: 1; padding: 12px 8px 16px; border: none; background: transparent; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 9px; text-align: center; cursor: pointer; transition: color 0.2s; text-transform: uppercase; letter-spacing: 0.5px; }
+  .tab-btn .tab-icon { font-size: 20px; display: block; margin-bottom: 3px; }
+  .tab-btn.active { color: var(--accent); }
+  .view { display: none; }
+  .view.active { display: block; }
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 20px; }
+  .stats-cat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .stats-cat-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .stats-cat-icon { font-size: 18px; }
+  .stats-cat-name { font-size: 11px; color: var(--muted); }
+  .stats-cat-amount { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 20px; }
+  .stats-cat-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .converter-wrap { padding: 16px 20px; }
+  .conv-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+  .conv-card h3 { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 12px; color: var(--accent); margin-bottom: 14px; text-transform: uppercase; letter-spacing: 1px; }
+  .conv-input-group { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .conv-result { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 34px; color: var(--accent); text-align: center; padding: 14px 0 6px; }
+  .conv-rate { font-size: 11px; color: var(--muted); text-align: center; margin-bottom: 14px; }
+  .quick-amounts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+  .quick-btn { padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: 'DM Mono', monospace; font-size: 12px; cursor: pointer; text-align: center; transition: all 0.15s; }
+  .quick-btn:active { background: var(--accent); color: #0a0a0a; border-color: var(--accent); }
+  .real-price-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+  .real-price-card h3 { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 12px; color: var(--accent); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+  .rp-subtitle { font-size: 10px; color: var(--muted); margin-bottom: 14px; }
+  .rp-input-row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  .rp-result-box { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .rp-line { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .rp-line:last-child { border-bottom: none; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 15px; color: var(--accent); padding-top: 10px; }
+  .rp-line span:first-child { color: var(--muted); }
+  .tip-selector { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 12px; }
+  .tip-opt { padding: 8px 4px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); font-family: 'DM Mono', monospace; font-size: 11px; text-align: center; cursor: pointer; transition: all 0.2s; }
+  .tip-opt.active { background: var(--accent); border-color: var(--accent); color: #0a0a0a; font-weight: 700; }
+  .context-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 14px; }
+  .ctx-btn { padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); font-family: 'DM Mono', monospace; font-size: 9px; text-align: center; cursor: pointer; transition: all 0.2s; line-height: 1.5; }
+  .ctx-btn .ctx-icon { font-size: 16px; display: block; margin-bottom: 2px; }
+  .ctx-btn.active { border-color: var(--accent); color: var(--accent); }
+  .tip-note { font-size: 10px; color: var(--muted); line-height: 1.7; background: var(--bg); border-radius: 8px; padding: 10px 12px; }
+  .sub-label { font-size: 10px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <div>
+      <h1>NYC 🗽</h1>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px" id="trip-progress"></div>
+    </div>
+    <div class="date-info" id="header-date"></div>
+  </div>
+  <div class="budget-bar-wrap"><div class="budget-bar-fill" id="main-bar" style="width:0%"></div></div>
+</header>
+
+<!-- TRACKER -->
+<div class="view active" id="view-tracker">
+  <div class="budget-summary">
+    <div class="stat-card">
+      <div class="stat-label">Dépensé</div>
+      <div class="stat-value" id="total-spent">0€</div>
+      <div class="stat-sub" id="total-spent-usd">0$</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Restant</div>
+      <div class="stat-value green" id="total-remaining">2000€</div>
+      <div class="stat-sub" id="total-remaining-usd">2360$</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Moy/jour</div>
+      <div class="stat-value" id="daily-avg">—</div>
+      <div class="stat-sub">~154€/j max</div>
+    </div>
+  </div>
+
+  <div class="section-title">Jour</div>
+  <div class="days-scroll" id="days-scroll"></div>
+
+  <div class="day-totals">
+    <div class="day-totals-row">
+      <span class="day-totals-label" id="day-totals-label">Jour 1</span>
+      <span class="day-totals-val" id="day-total-val">0€</span>
+    </div>
+    <div class="mini-bar-wrap"><div class="mini-bar-fill" id="day-bar" style="width:0%;background:var(--accent)"></div></div>
+    <div style="font-size:10px;color:var(--muted)" id="day-bar-label">0€ / ~154€ budget du jour</div>
+  </div>
+
+  <div class="add-section">
+    <div class="add-card">
+      <h3>+ Ajouter une dépense</h3>
+      <div class="input-row">
+        <input type="text" id="exp-desc" placeholder="Description...">
+      </div>
+      <div class="input-row" style="margin-bottom:10px">
+        <input type="number" id="exp-amount" placeholder="0" min="0" step="0.01">
+        <div class="currency-toggle">
+          <button class="active" id="cur-eur" onclick="setCurrency('EUR')">€</button>
+          <button id="cur-usd" onclick="setCurrency('USD')">$</button>
+        </div>
+      </div>
+      <div class="cat-grid">
+        <button class="cat-btn active" data-cat="nourriture" onclick="selectCat(this)"><span class="cat-icon">🍔</span>Food</button>
+        <button class="cat-btn" data-cat="bars" onclick="selectCat(this)"><span class="cat-icon">🍺</span>Bars</button>
+        <button class="cat-btn" data-cat="transport" onclick="selectCat(this)"><span class="cat-icon">🚇</span>Transit</button>
+        <button class="cat-btn" data-cat="shopping" onclick="selectCat(this)"><span class="cat-icon">🛍️</span>Shopping</button>
+        <button class="cat-btn" data-cat="activites" onclick="selectCat(this)"><span class="cat-icon">🎯</span>Activités</button>
+        <button class="cat-btn" data-cat="logement" onclick="selectCat(this)"><span class="cat-icon">🏠</span>Logement</button>
+      </div>
+      <button class="add-btn" onclick="addExpense()">Ajouter</button>
+    </div>
+  </div>
+
+  <div class="expenses-section">
+    <div class="section-title" id="exp-list-title">Dépenses — Jour 1</div>
+    <div id="expenses-list"></div>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="view" id="view-stats">
+  <div style="padding:16px 20px 8px">
+    <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:20px;color:var(--accent)">Résumé</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px" id="stats-subtitle">13 jours · 3→15 mars</div>
+  </div>
+  <div class="stats-grid" id="stats-grid"></div>
+  <div style="padding:0 20px 16px">
+    <div class="section-title" style="margin-bottom:12px;padding:0">Par jour</div>
+    <div id="daily-chart" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;align-items:flex-end;gap:3px;height:120px"></div>
+  </div>
+</div>
+
+<!-- CONVERTER + REAL PRICE -->
+<div class="view" id="view-converter">
+  <div class="converter-wrap">
+
+    <div class="real-price-card">
+      <h3>💰 Vrai prix NYC</h3>
+      <div class="rp-subtitle">Entre le prix affiché — taxe + tip calculés automatiquement</div>
+
+      <div class="sub-label">Contexte</div>
+      <div class="context-btns">
+        <button class="ctx-btn active" data-ctx="restaurant" onclick="selectCtx(this)"><span class="ctx-icon">🍽️</span>Restaurant</button>
+        <button class="ctx-btn" data-ctx="bar" onclick="selectCtx(this)"><span class="ctx-icon">🍺</span>Bar</button>
+        <button class="ctx-btn" data-ctx="taxi" onclick="selectCtx(this)"><span class="ctx-icon">🚕</span>Taxi/Uber</button>
+        <button class="ctx-btn" data-ctx="cafe" onclick="selectCtx(this)"><span class="ctx-icon">☕</span>Café</button>
+        <button class="ctx-btn" data-ctx="delivery" onclick="selectCtx(this)"><span class="ctx-icon">📦</span>Livraison</button>
+        <button class="ctx-btn" data-ctx="shopping" onclick="selectCtx(this)"><span class="ctx-icon">🛍️</span>Shopping</button>
+      </div>
+
+      <div class="sub-label">Tip</div>
+      <div class="tip-selector" id="tip-selector">
+        <button class="tip-opt" data-tip="0" onclick="selectTip(this)">0%</button>
+        <button class="tip-opt" data-tip="15" onclick="selectTip(this)">15%</button>
+        <button class="tip-opt active" data-tip="20" onclick="selectTip(this)">20%</button>
+        <button class="tip-opt" data-tip="22" onclick="selectTip(this)">22%</button>
+        <button class="tip-opt" data-tip="25" onclick="selectTip(this)">25%</button>
+      </div>
+
+      <div class="rp-input-row">
+        <input type="number" id="rp-input" placeholder="Prix affiché en $" style="flex:1" oninput="updateRealPrice()" min="0" step="0.01">
+      </div>
+
+      <div class="rp-result-box" id="rp-result-box" style="display:none">
+        <div class="rp-line"><span>Prix affiché</span><span id="rp-base">—</span></div>
+        <div class="rp-line"><span>Taxe NYC (8.875%)</span><span id="rp-tax">—</span></div>
+        <div class="rp-line"><span id="rp-tip-label">Tip (20%)</span><span id="rp-tip-val">—</span></div>
+        <div class="rp-line"><span>Total réel $</span><span id="rp-total-usd">—</span></div>
+        <div class="rp-line"><span>Total en €</span><span id="rp-total-eur">—</span></div>
+      </div>
+      <div class="tip-note" id="tip-note">🍽️ Restaurant : tip 20% recommandé. Taxe 8.875% toujours ajoutée.</div>
+    </div>
+
+    <div class="conv-card">
+      <h3>💱 Convertisseur</h3>
+      <div class="conv-input-group">
+        <input type="number" id="conv-input" placeholder="0" style="flex:1" oninput="updateConverter()" min="0">
+        <div class="currency-toggle">
+          <button class="active" id="conv-from-eur" onclick="setConvDir('EUR')">€→$</button>
+          <button id="conv-from-usd" onclick="setConvDir('USD')">$→€</button>
+        </div>
+      </div>
+      <div class="conv-result" id="conv-result">—</div>
+      <div class="conv-rate">1€ = 1.18$ · Taux du jour</div>
+      <div class="quick-amounts">
+        <button class="quick-btn" onclick="setConvAmount(5)">5</button>
+        <button class="quick-btn" onclick="setConvAmount(10)">10</button>
+        <button class="quick-btn" onclick="setConvAmount(20)">20</button>
+        <button class="quick-btn" onclick="setConvAmount(50)">50</button>
+        <button class="quick-btn" onclick="setConvAmount(100)">100</button>
+        <button class="quick-btn" onclick="setConvAmount(200)">200</button>
+        <button class="quick-btn" onclick="setConvAmount(500)">500</button>
+        <button class="quick-btn" onclick="setConvAmount(1000)">1000</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('tracker',this)"><span class="tab-icon">📅</span>Tracker</button>
+  <button class="tab-btn" onclick="switchTab('stats',this)"><span class="tab-icon">📊</span>Stats</button>
+  <button class="tab-btn" onclick="switchTab('converter',this)"><span class="tab-icon">💰</span>Prix réel</button>
+</div>
+
+<script>
+  const RATE = 1.18;
+  const TOTAL_BUDGET = 2000;
+  const TRIP_DAYS = 13;
+  const DAILY_BUDGET = TOTAL_BUDGET / TRIP_DAYS;
+  const TRIP_START = new Date('2026-03-03');
+
+  const CAT_COLORS = { nourriture:'#ff9a3c', bars:'#c084fc', transport:'#38bdf8', shopping:'#fb7185', activites:'#34d399', logement:'#facc15' };
+  const CAT_ICONS  = { nourriture:'🍔', bars:'🍺', transport:'🚇', shopping:'🛍️', activites:'🎯', logement:'🏠' };
+  const DAY_NAMES  = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+  const MONTH_NAMES= ['jan','fév','mar','avr','mai','jun','jul','aoû','sep','oct','nov','déc'];
+
+  const CTX_TIPS = {
+    restaurant: { tip:20, tax:true,  note:'🍽️ Restaurant : tip 20% recommandé. Taxe 8.875% toujours ajoutée.' },
+    bar:        { tip:20, tax:true,  note:'🍺 Bar : 18–20% de tip. Taxe sur chaque verre.' },
+    taxi:       { tip:20, tax:false, note:'🚕 Taxi/Uber : 15–20% de tip. Pas de taxe NYC sur les trajets.' },
+    cafe:       { tip:10, tax:true,  note:'☕ Café : 0–10% selon ton humeur. Taxe 8.875% ajoutée.' },
+    delivery:   { tip:15, tax:true,  note:'📦 Livraison : 15% minimum. Taxe généralement incluse dans les apps.' },
+    shopping:   { tip:0,  tax:true,  note:'🛍️ Shopping : pas de tip. Taxe 8.875% sauf vêtements < 110$.' },
+  };
+
+  let state = {
+    expenses: JSON.parse(localStorage.getItem('nyc_v2') || '[]'),
+    selectedDay: 1,
+    currency: 'EUR',
+  };
+  let selectedCat = 'nourriture';
+  let convDir = 'EUR';
+  let rpTip = 20;
+  let rpCtx = 'restaurant';
+  let rpTax = true;
+
+  function save() { localStorage.setItem('nyc_v2', JSON.stringify(state.expenses)); }
+
+  function getDayDate(day) {
+    const d = new Date(TRIP_START);
+    d.setDate(d.getDate() + day - 1);
+    return d;
+  }
+
+  function formatDayLabel(day) {
+    const d = getDayDate(day);
+    return DAY_NAMES[d.getDay()] + ' ' + d.getDate() + ' ' + MONTH_NAMES[d.getMonth()];
+  }
+
+  function toEur(amount, currency) { return currency === 'USD' ? amount / RATE : amount; }
+  function getDayTotal(day) { return state.expenses.filter(e=>e.day===day).reduce((s,e)=>s+toEur(e.amount,e.currency),0); }
+  function getTotalSpent() { return state.expenses.reduce((s,e)=>s+toEur(e.amount,e.currency),0); }
+
+  function getCurrentTripDay() {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const start = new Date(TRIP_START); start.setHours(0,0,0,0);
+    const diff = Math.ceil((today - start) / 86400000) + 1;
+    return diff >= 1 && diff <= TRIP_DAYS ? diff : null;
+  }
+
+  function renderHeader() {
+    const today = new Date();
+    const tripDay = getCurrentTripDay();
+    document.getElementById('header-date').innerHTML =
+      today.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'}) +
+      '<br>' + (tripDay ? `Jour ${tripDay}/${TRIP_DAYS}` : '3→15 mars');
+    document.getElementById('trip-progress').textContent =
+      tripDay ? `J${tripDay} · ${TRIP_DAYS - tripDay + 1}j restants` : 'Départ mardi 3 mars';
+    const spent = getTotalSpent();
+    const pct = Math.min((spent / TOTAL_BUDGET) * 100, 100);
+    const bar = document.getElementById('main-bar');
+    bar.style.width = pct + '%';
+    bar.className = 'budget-bar-fill' + (pct > 100 ? ' danger' : pct > 80 ? ' warning' : '');
+  }
+
+  function renderSummary() {
+    const spent = getTotalSpent();
+    const remaining = TOTAL_BUDGET - spent;
+    const days = [...new Set(state.expenses.map(e=>e.day))].length;
+    const avg = days > 0 ? spent / days : 0;
+    document.getElementById('total-spent').textContent = spent.toFixed(0) + '€';
+    document.getElementById('total-spent-usd').textContent = (spent * RATE).toFixed(0) + '$';
+    const remEl = document.getElementById('total-remaining');
+    remEl.textContent = remaining.toFixed(0) + '€';
+    remEl.className = 'stat-value' + (remaining < 0 ? ' red' : remaining < 300 ? ' yellow' : ' green');
+    document.getElementById('total-remaining-usd').textContent = (Math.max(0,remaining)*RATE).toFixed(0) + '$';
+    document.getElementById('daily-avg').textContent = avg > 0 ? avg.toFixed(0) + '€' : '—';
+  }
+
+  function renderDays() {
+    const scroll = document.getElementById('days-scroll');
+    scroll.innerHTML = '';
+    const todayDay = getCurrentTripDay();
+    for (let d = 1; d <= TRIP_DAYS; d++) {
+      const date = getDayDate(d);
+      const dayTotal = getDayTotal(d);
+      const hasData = state.expenses.some(e=>e.day===d);
+      const overBudget = dayTotal > DAILY_BUDGET;
+      const isToday = d === todayDay;
+      const pill = document.createElement('div');
+      pill.className = 'day-pill' +
+        (d === state.selectedDay ? ' active' : '') +
+        (hasData && !overBudget ? ' has-data' : '') +
+        (overBudget ? ' over-budget' : '') +
+        (isToday && d !== state.selectedDay ? ' today-pill' : '');
+      pill.innerHTML = `<div class="day-num">${date.getDate()}</div><div class="day-label">${DAY_NAMES[date.getDay()]}</div><div class="day-dot"></div>`;
+      pill.onclick = () => { state.selectedDay = d; renderAll(); };
+      scroll.appendChild(pill);
+    }
+    const pills = scroll.querySelectorAll('.day-pill');
+    if (pills[state.selectedDay-1]) pills[state.selectedDay-1].scrollIntoView({inline:'center',behavior:'smooth'});
+  }
+
+  function renderDayTotals() {
+    const total = getDayTotal(state.selectedDay);
+    const pct = Math.min((total / DAILY_BUDGET) * 100, 100);
+    document.getElementById('day-totals-label').textContent = `Jour ${state.selectedDay} — ${formatDayLabel(state.selectedDay)}`;
+    document.getElementById('day-total-val').textContent = total.toFixed(2) + '€';
+    const bar = document.getElementById('day-bar');
+    bar.style.width = pct + '%';
+    bar.style.background = total > DAILY_BUDGET ? 'var(--danger)' : total > DAILY_BUDGET*0.85 ? 'var(--logement)' : 'var(--accent)';
+    document.getElementById('day-bar-label').textContent = `${total.toFixed(2)}€ / ${DAILY_BUDGET.toFixed(0)}€ budget du jour`;
+  }
+
+  function renderExpenses() {
+    const dayExps = state.expenses.filter(e=>e.day===state.selectedDay);
+    const list = document.getElementById('expenses-list');
+    document.getElementById('exp-list-title').textContent = `Dépenses — Jour ${state.selectedDay}`;
+    if (dayExps.length === 0) {
+      list.innerHTML = `<div class="empty-state"><span class="big">💸</span>Aucune dépense ce jour</div>`;
+      return;
+    }
+    list.innerHTML = dayExps.map(e => {
+      const eur = toEur(e.amount, e.currency);
+      const globalIdx = state.expenses.indexOf(e);
+      return `<div class="expense-item">
+        <div class="expense-cat-dot" style="background:${CAT_COLORS[e.cat]}"></div>
+        <div class="expense-info">
+          <div class="expense-desc">${e.desc || CAT_ICONS[e.cat] + ' ' + e.cat}</div>
+          <div class="expense-meta">${CAT_ICONS[e.cat]} ${e.cat}</div>
+        </div>
+        <div class="expense-amount">
+          <div class="expense-eur" style="color:${CAT_COLORS[e.cat]}">${eur.toFixed(2)}€</div>
+          <div class="expense-usd">${(eur*RATE).toFixed(2)}$</div>
+        </div>
+        <button class="delete-btn" onclick="deleteExpense(${globalIdx})">×</button>
+      </div>`;
+    }).join('');
+  }
+
+  function renderStats() {
+    const totals = {};
+    Object.keys(CAT_COLORS).forEach(c => totals[c] = 0);
+    state.expenses.forEach(e => { totals[e.cat] += toEur(e.amount, e.currency); });
+    document.getElementById('stats-grid').innerHTML = Object.entries(totals).map(([cat, total]) => `
+      <div class="stats-cat-card">
+        <div class="stats-cat-top"><span class="stats-cat-icon">${CAT_ICONS[cat]}</span><span class="stats-cat-name">${cat}</span></div>
+        <div class="stats-cat-amount" style="color:${CAT_COLORS[cat]}">${total.toFixed(0)}€</div>
+        <div class="stats-cat-sub">${(total*RATE).toFixed(0)}$</div>
+      </div>`).join('');
+    const chartEl = document.getElementById('daily-chart');
+    const maxVal = Math.max(...Array.from({length:TRIP_DAYS},(_,i)=>getDayTotal(i+1)), DAILY_BUDGET, 1);
+    chartEl.innerHTML = Array.from({length:TRIP_DAYS},(_,i) => {
+      const d = i+1; const total = getDayTotal(d);
+      const h = Math.round((total / maxVal) * 72);
+      const color = total > DAILY_BUDGET ? 'var(--danger)' : total > 0 ? 'var(--accent)' : 'var(--border)';
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px">
+        <div style="width:100%;background:${color};border-radius:2px 2px 0 0;height:${Math.max(h,total>0?3:0)}px"></div>
+        <div style="font-size:7px;color:var(--muted)">${getDayDate(d).getDate()}</div>
+      </div>`;
+    }).join('');
+    const total = getTotalSpent();
+    const days = [...new Set(state.expenses.map(e=>e.day))].length;
+    document.getElementById('stats-subtitle').textContent = `Total : ${total.toFixed(0)}€ · ${days} jour${days>1?'s':''} tracké${days>1?'s':''}`;
+  }
+
+  function renderAll() { renderHeader(); renderSummary(); renderDays(); renderDayTotals(); renderExpenses(); }
+
+  function selectCat(btn) {
+    document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active'); selectedCat = btn.dataset.cat;
+  }
+
+  function setCurrency(cur) {
+    state.currency = cur;
+    document.getElementById('cur-eur').classList.toggle('active', cur==='EUR');
+    document.getElementById('cur-usd').classList.toggle('active', cur==='USD');
+  }
+
+  function addExpense() {
+    const amount = parseFloat(document.getElementById('exp-amount').value);
+    if (!amount || amount <= 0) { document.getElementById('exp-amount').focus(); return; }
+    state.expenses.push({
+      day: state.selectedDay,
+      desc: document.getElementById('exp-desc').value.trim(),
+      amount, currency: state.currency, cat: selectedCat, ts: Date.now()
+    });
+    document.getElementById('exp-desc').value = '';
+    document.getElementById('exp-amount').value = '';
+    save(); renderAll();
+  }
+
+  function deleteExpense(idx) { state.expenses.splice(idx, 1); save(); renderAll(); }
+
+  function switchTab(tab, btn) {
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.getElementById('view-'+tab).classList.add('active');
+    btn.classList.add('active');
+    if (tab==='stats') renderStats();
+  }
+
+  function setConvDir(dir) {
+    convDir = dir;
+    document.getElementById('conv-from-eur').classList.toggle('active', dir==='EUR');
+    document.getElementById('conv-from-usd').classList.toggle('active', dir==='USD');
+    updateConverter();
+  }
+
+  function updateConverter() {
+    const val = parseFloat(document.getElementById('conv-input').value) || 0;
+    const result = convDir==='EUR' ? val*RATE : val/RATE;
+    document.getElementById('conv-result').textContent = val > 0 ? result.toFixed(2)+(convDir==='EUR'?'$':'€') : '—';
+  }
+
+  function setConvAmount(n) { document.getElementById('conv-input').value = n; updateConverter(); }
+
+  function selectCtx(btn) {
+    document.querySelectorAll('.ctx-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active'); rpCtx = btn.dataset.ctx;
+    const ctx = CTX_TIPS[rpCtx];
+    rpTax = ctx.tax; rpTip = ctx.tip;
+    document.querySelectorAll('.tip-opt').forEach(b=>{ b.classList.toggle('active', parseInt(b.dataset.tip)===rpTip); });
+    document.getElementById('tip-note').textContent = ctx.note;
+    updateRealPrice();
+  }
+
+  function selectTip(btn) {
+    document.querySelectorAll('.tip-opt').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active'); rpTip = parseInt(btn.dataset.tip);
+    updateRealPrice();
+  }
+
+  function updateRealPrice() {
+    const base = parseFloat(document.getElementById('rp-input').value) || 0;
+    const box = document.getElementById('rp-result-box');
+    if (!base || base <= 0) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    const tax = rpTax ? base * 0.08875 : 0;
+    const tip = base * (rpTip / 100);
+    const totalUsd = base + tax + tip;
+    const totalEur = totalUsd / RATE;
+    document.getElementById('rp-base').textContent = base.toFixed(2) + '$';
+    document.getElementById('rp-tax').textContent = rpTax ? '+' + tax.toFixed(2) + '$' : '—';
+    document.getElementById('rp-tip-label').textContent = `Tip (${rpTip}%)`;
+    document.getElementById('rp-tip-val').textContent = rpTip > 0 ? '+' + tip.toFixed(2) + '$' : '—';
+    document.getElementById('rp-total-usd').textContent = totalUsd.toFixed(2) + '$';
+    document.getElementById('rp-total-eur').textContent = '≈ ' + totalEur.toFixed(2) + '€';
+  }
+
+  renderAll();
+</script>
+</body>
+</html>
